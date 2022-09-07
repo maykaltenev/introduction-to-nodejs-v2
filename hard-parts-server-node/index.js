@@ -47,3 +47,50 @@ function doOnIncoming(incomingData, functionsToSetOutgoingData) {
 //? Our return message is also in HTTP format
 // We can use the body to send the data and headers to send important metadata
 // In the headers we can include info on the format of the data being sent back -e.g. it's html so to load it as a webpage
+
+//! Streams
+//? Processing Data in Batches
+// What if Node used 'event' (message-broadcasting) pattern to send out a message('event') each time
+// sufficient batch of the json datchas been loaded in
+// And at each point, take that data and start cleaning it - in batches
+let cleanedTweets = "";
+function cleanedTweets(tweetsToClean) {
+
+}
+function doOnNewBatch(data) {
+    cleanedTweets += cleanedTweets(data);
+}
+const accessTweetsArchive = fs.createReadStream('./tweetsArchive.json')
+accessTweetsArchive.on('data', doOnNewBatch)
+
+//! Asynchronicity in Node
+// The call stack, event loop and callback queue
+// in Node
+// — Call stack: JavaScript keeps track of what function
+// is being run and where it was run from. Whenever
+// a function is to be run, it’s added to the call stack
+// — Callback queue - any functions delayed from
+// running (and run automatically by Node) are
+// added to the callback queue when the background
+// Node task has completed (or there’s been some
+// activity like a request)
+// — Event loop - Determines what function/code to
+// run next from the queue(s)
+
+function useImportedtweets(errorData, data) {
+    const tweets = JSON.parse(data)
+    console.log(tweets.tweet1)
+}
+function immediately() {
+    console.log("Run me last")
+}
+function printHello() { console.log("Hello") }
+function blockFor500ms() {
+    // Block JS thread DIRECTLY for 500 ms
+    // With e.g. a for loop with 5m elements
+}
+setTimeout(printHello, 0)
+fs.readFile('./tweets.json', useImportedtweets)
+blockFor500ms()
+console.log("Me first")
+setImmediate(immediately)
