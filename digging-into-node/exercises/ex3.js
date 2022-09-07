@@ -2,10 +2,21 @@
 
 "use strict";
 
+var util = require("util");
 var path = require("path");
 var fs = require("fs");
 var zlib = require("zlib");
 var Transform = require("stream").Transform;
+
+var CAF = require("caf");
+
+
+// async initializations
+var fsStatAsync = util.promisify(fs.stat);
+var fsMkdirAsync = util.promisify(fs.mkdir);
+processFile = CAF(processFile);
+// ************
+
 
 var args = require("minimist")(process.argv.slice(2), {
     boolean: ["help", "in", "out", "uncompress", "compress",],
@@ -15,28 +26,60 @@ var args = require("minimist")(process.argv.slice(2), {
 const BASEPATH =
     path.resolve(process.env.BASEPATH || __dirname);
 
-var OUTPATH = path.join(BASEPATH, "out.txt");
+const BASEOUTPATH = path.resolve(
+    process.env.BASEOUTPATH || path.join(__dirname, "outfiles")
+);
 
-if (args.help || process.argv.length <= 2) {
-    error(null, true);
-}
-else if (args._.includes("-") || args.in) {
-    processFile(process.stdin);
-}
-else if (args.file) {
-    let filePath = path.join(BASEPATH, args.file);
-    processFile(
-        fs.createReadStream(filePath)
-    );
-}
-else {
-    error("Usage incorrect.", true);
-}
+var OUTPATH = path.join(BASEOUTPATH, "out.txt");
+
+main().catch(error);
+
+
+
 
 // ************************************
 
+async function main() {
+    try {
+        await fsStatAsync(BASEOUTPATH);
+    }
+    catch (err) {
+        await fsMkdirAsync(BASEOUTPATH);
+    }
+
+    var timeout = CAF.timeout(11, "Took too long.\n");
+
+    if (args.help || process.argv.length <= 2) {
+        error(null,
+            true);
+    }
+    else if (args._.includes("-") || args.in) {
+        await processFile(timeout, process.stdin);
+
+        // temporary debug output
+        console.error("Complete.");
+    }
+    else if (args.file) {
+        let filePath = path.join(BASEPATH, args.file);
+
+        await processFile(timeout, fs.createReadStream(filePath));
+
+        // temporary debug output
+        console.error("Complete.");
+    }
+    else {
+        error("Usage incorrect.",/*showHelp=*/true);
+    }
+}
+
+function streamComplete(stream) {
+    return new Promise(function c(res) {
+        stream.on("end", res);
+    });
+}
+
 function printHelp() {
-    console.log("ex2 usage:");
+    console.log("ex3 usage:");
     console.log("");
     console.log("--help                      print this help");
     console.log("-, --in                     read file from stdin");
@@ -57,7 +100,7 @@ function error(err, showHelp = false) {
     }
 }
 
-function processFile(inputStream) {
+function* processFile(signal, inputStream) {
     var stream = inputStream;
     var outStream;
 
@@ -66,14 +109,15 @@ function processFile(inputStream) {
         stream = stream.pipe(gunzip);
     }
 
-    var upperCaseTr = new Transform({
-        transform(chunk, encoding, callback) {
+    var uppercase = new Transform({
+        transform(chunk, encoding, done) {
             this.push(chunk.toString().toUpperCase());
-            callback();
+            done();
         }
     });
 
-    stream = stream.pipe(upperCaseTr);
+    stream = stream.pipe(uppercase);
+
     if (args.compress) {
         OUTPATH = `${OUTPATH}.gz`;
         let gzip = zlib.createGzip();
@@ -86,5 +130,14 @@ function processFile(inputStream) {
     else {
         outStream = fs.createWriteStream(OUTPATH);
     }
+
     stream.pipe(outStream);
+
+    // listen for cancelation to abort output
+    signal.pr.catch(function onCancelation() {
+        stream.unpipe(outStream);
+        stream.destroy();
+    });
+
+    yield streamComplete(stream);
 }
